@@ -1,5 +1,5 @@
 {
-  "$comment": "Not part of the `tsc -b` build graph (Wrangler type-checks Worker code at deploy time). Run `npx tsc -p tsconfig.functions.json --noEmit` to check this folder manually.",
+  "$comment": "Not part of the `tsc -b` build graph (Wrangler type-checks the Worker at deploy time). Run `npx tsc -p tsconfig.worker.json --noEmit` to check it manually.",
   "compilerOptions": {
     "target": "es2023",
     "lib": ["ES2023", "DOM"],
@@ -17,5 +17,5 @@
     "strict": true,
     "erasableSyntaxOnly": true
   },
-  "include": ["functions"]
+  "include": ["worker.ts"]
 }

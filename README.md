@@ -50,7 +50,7 @@ npm run build        # production build
 The frontend never talks to Anthropic directly. The intended path is:
 
 ```
-Browser → Cloudflare Worker (functions/api/assistant.ts) → Anthropic API
+Browser → Cloudflare Worker (worker.ts) → Anthropic API
 ```
 
 `src/server/ai/provider.ts` picks a provider based on server-side env vars
@@ -74,12 +74,15 @@ ANTHROPIC_API_KEY=      # set only server-side (Cloudflare project env vars), ne
 ## Deploying to Cloudflare
 
 ```bash
-npm run build
-npx wrangler pages deploy dist
+npx wrangler login   # one-time, opens a browser OAuth flow
+npm run deploy       # builds, then `wrangler deploy`
 ```
 
-(`npm run deploy` does both.) `wrangler.toml` configures the Pages project;
-`functions/api/assistant.ts` is the Worker entry point described above.
+This uses the Workers + Static Assets model: `wrangler.toml` points `main` at
+`worker.ts` (the Worker entry point described above) and serves the built
+`dist/` folder as static assets via the `ASSETS` binding, with `/api/assistant`
+handled by the Worker. `npm run cf:dev` runs the same thing locally via
+`wrangler dev`.
 
 ## Known gaps / intentionally left for Phase 2
 

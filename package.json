@@ -8,8 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "deploy": "npm run build && wrangler pages deploy dist",
-    "cf:dev": "wrangler pages dev -- npm run dev"
+    "deploy": "npm run build && wrangler deploy",
+    "cf:dev": "npm run build && wrangler dev"
   },
   "dependencies": {
     "lucide-react": "^1.49.0",
