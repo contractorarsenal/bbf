@@ -80,18 +80,24 @@ input. It never computes pricing itself.
   disabled "Reserve My Project" notice explaining it's pending Best Buy
   Floors' approval of deposit terms and a payment provider — Phase 2.
 
-### Dev-only fallback (not the primary experience)
+### Dev-only fallback (not the primary experience, and not the default)
 
 `src/lib/conversation-engine.ts` is a deterministic, keyword-driven engine
-kept *only* as a fallback for local development without Anthropic access —
-e.g. running plain `vite dev` with no Worker present. The client
-(`ChatPanel.tsx`) always tries `POST /api/assistant` first; it only drops to
-this local engine if that request fails outright (network error / no
-endpoint). If the Worker route exists but Anthropic itself errors (bad key,
-API outage), the Worker returns a controlled message — "I'm having trouble
-connecting right now. You can still call the Best Buy Floors team at
-+1 (425) 699-9251." — and that is never silently swapped for the scripted
-engine. See `worker.ts`.
+kept *only* as a fallback. It runs server-side (`DemoProvider`) **only when
+`AI_PROVIDER` is explicitly `"demo"`** — every other value, including unset,
+resolves to `AnthropicProvider`. This is a fail-closed design: production
+must never silently degrade to the scripted engine just because a secret
+wasn't configured. If `AnthropicProvider` fails for any reason — missing key,
+bad key, API outage — the Worker returns a controlled message instead:
+"I'm having trouble connecting right now. You can still call the Best Buy
+Floors team at +1 (425) 699-9251." That is never swapped for the demo engine.
+See `worker.ts` / `provider.ts`.
+
+Separately, the client (`ChatPanel.tsx`) has its own, unrelated fallback: if
+`POST /api/assistant` fails outright (network error / no route at all — e.g.
+running plain `vite dev` with no Worker present), it runs the same
+deterministic engine client-side rather than showing an error for what's
+really just a local dev setup gap.
 
 ## Environment variables
 
@@ -99,12 +105,14 @@ Server-side only (Cloudflare Worker env), never exposed to the client and
 never prefixed `VITE_`:
 
 ```
-AI_PROVIDER=demo        # "demo" (fallback engine) or "anthropic" (real Claude)
-ANTHROPIC_API_KEY=      # required when AI_PROVIDER=anthropic
+AI_PROVIDER=anthropic   # production default. "demo" explicitly opts into the fallback engine.
+ANTHROPIC_API_KEY=      # required whenever AI_PROVIDER isn't "demo" — fails closed if missing
 ```
 
 For local `wrangler dev`, copy `.env.example` to `.dev.vars` and fill in a
-real key (both gitignored). In production:
+real key (both gitignored) if you want to talk to real Anthropic locally, or
+set `AI_PROVIDER=demo` there instead to use the scripted engine on purpose.
+In production:
 
 ```bash
 npx wrangler secret put ANTHROPIC_API_KEY

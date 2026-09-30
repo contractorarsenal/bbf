@@ -7,7 +7,11 @@ directory = "./dist"
 binding = "ASSETS"
 
 [vars]
-# "demo" = deterministic dev-only fallback engine. Set to "anthropic" (and run
-# `npx wrangler secret put ANTHROPIC_API_KEY` — never add the key here in
-# plaintext) to enable the real Claude-powered assistant.
-AI_PROVIDER = "demo"
+# "anthropic" = the real Claude-powered assistant (production default).
+# ANTHROPIC_API_KEY is NOT set here — it's an encrypted secret, set with
+# `npx wrangler secret put ANTHROPIC_API_KEY`, never plaintext in this file.
+# The deterministic dev-only fallback only runs when this is explicitly set
+# to "demo" (e.g. in a local .dev.vars, gitignored) — see worker.ts/provider.ts:
+# with AI_PROVIDER=anthropic and no key configured, the app fails closed with
+# a controlled error message rather than silently using the scripted engine.
+AI_PROVIDER = "anthropic"

@@ -6,11 +6,13 @@ import type { AssistantEnv, AssistantReply, AssistantRequest } from "./src/serve
  * built SPA from ./dist via the ASSETS binding, and handles POST /api/assistant.
  *
  * The chat UI calls this endpoint for every turn. getProvider() picks the
- * Anthropic provider when AI_PROVIDER=anthropic and a key is configured, or
- * falls back to the deterministic demo engine only when it isn't (local dev
- * without secrets configured). When the Anthropic provider IS selected and
- * its call fails, that failure is caught here and turned into a controlled
- * error reply — it is never silently swapped for the scripted demo engine.
+ * deterministic demo engine ONLY when AI_PROVIDER is explicitly "demo"
+ * (local dev convenience); everything else — including AI_PROVIDER=anthropic
+ * with no key configured — resolves to AnthropicProvider. Any failure there
+ * (missing key, API error) is caught here and turned into a controlled error
+ * reply. It is never silently swapped for the scripted demo engine — that
+ * would mean production quietly degrading to fake AI, which is the exact
+ * failure mode this fails closed against.
  */
 interface Env extends AssistantEnv {
   ASSETS: { fetch(request: Request): Promise<Response> }
@@ -31,7 +33,10 @@ async function handleAssistant(request: Request, env: Env): Promise<Response> {
     return new Response(JSON.stringify({ error: "`message` is required" }), { status: 400 })
   }
 
-  const usingAnthropic = env.AI_PROVIDER === "anthropic" && Boolean(env.ANTHROPIC_API_KEY)
+  // Matches getProvider()'s own selection exactly: anything other than an
+  // explicit "demo" resolves to AnthropicProvider, so anything other than
+  // "demo" fails closed on error rather than silently using the demo engine.
+  const usingDemo = env.AI_PROVIDER === "demo"
   const provider = await getProvider(env)
 
   let result: AssistantReply
@@ -42,7 +47,7 @@ async function handleAssistant(request: Request, env: Env): Promise<Response> {
       projectState: body.projectState ?? {},
     })
   } catch (err) {
-    if (!usingAnthropic) throw err
+    if (usingDemo) throw err
     // eslint-disable-next-line no-console
     console.error("[assistant] Anthropic provider failed:", err instanceof Error ? err.message : err)
     result = {

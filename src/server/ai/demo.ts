@@ -3,9 +3,10 @@ import { createInitialContext, handleUserMessage } from "../../lib/conversation-
 
 /**
  * Server-side mirror of the deterministic demo engine. This is the fallback
- * path — selected by getProvider() only when AI_PROVIDER isn't "anthropic"
- * or no key is configured. The primary path is AnthropicProvider; see
- * README for why the scripted engine is intentionally not the main experience.
+ * path — selected by getProvider() ONLY when AI_PROVIDER is explicitly
+ * "demo" (a local dev convenience). Everything else resolves to
+ * AnthropicProvider; see README for why this scripted engine is
+ * intentionally not the production experience.
  */
 export class DemoProvider implements AIProvider {
   async respond(request: AssistantRequest): Promise<AssistantReply> {

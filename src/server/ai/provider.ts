@@ -55,16 +55,19 @@ export interface AIProvider {
 }
 
 /**
- * Selects a provider based on server-side env bindings.
- * AI_PROVIDER=anthropic + a configured key -> real Claude conversation.
- * Anything else -> the deterministic demo engine (dev-only fallback; see
- * README for why this is intentionally not used as the primary experience).
+ * Selects a provider based on server-side env bindings. Fails closed:
+ * the deterministic demo engine ONLY runs when AI_PROVIDER is explicitly
+ * "demo" (a local dev convenience — see README). Everything else, including
+ * AI_PROVIDER=anthropic with no key configured, resolves to AnthropicProvider,
+ * which throws if the key is missing; worker.ts turns that into the controlled
+ * "assistant unavailable" error response. Production must never silently
+ * drop into the scripted engine just because a secret wasn't set.
  */
 export async function getProvider(env: AssistantEnv): Promise<AIProvider> {
-  if (env.AI_PROVIDER === "anthropic" && env.ANTHROPIC_API_KEY) {
-    const { AnthropicProvider } = await import("./anthropic")
-    return new AnthropicProvider(env)
+  if (env.AI_PROVIDER === "demo") {
+    const { DemoProvider } = await import("./demo")
+    return new DemoProvider()
   }
-  const { DemoProvider } = await import("./demo")
-  return new DemoProvider()
+  const { AnthropicProvider } = await import("./anthropic")
+  return new AnthropicProvider(env)
 }
