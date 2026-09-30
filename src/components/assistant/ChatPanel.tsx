@@ -19,7 +19,7 @@ function toMessage(stub: Stub): ChatMessage {
 }
 
 const WELCOME_TEXT =
-  "Hi! I'm the Best Buy Floors Project Assistant. I can help you compare flooring, answer product questions, or put together an estimated project range. What are you working on?"
+  "Hey, I'm Alex's AI assistant here at Best Buy Floors. I can help you figure out what flooring makes sense for your space, answer questions, or put together a rough project estimate. What are you working on?"
 
 const QUICK_ACTIONS: Array<{ id: string; label: string; prompt: string }> = [
   { id: "quote", label: "Get a Flooring Quote", prompt: "I'd like to get a flooring quote." },
@@ -115,7 +115,11 @@ export function ChatPanel({ onClose }: ChatPanelProps) {
 
   function handleQuickAction(action: ChatAction) {
     const match = QUICK_ACTIONS.find((a) => a.id === action.id)
-    void handleUserTurn(action.label, match?.prompt ?? action.label)
+    // "Talk to the Team" means the customer wants a human, not project
+    // qualification — show the contact form directly rather than trusting
+    // free-form model output alone to route this correctly every time.
+    const thenShowLeadForm = action.id === "team"
+    void handleUserTurn(action.label, match?.prompt ?? action.label, thenShowLeadForm)
   }
 
   function handleReadyToMoveForward() {
@@ -143,7 +147,7 @@ export function ChatPanel({ onClose }: ChatPanelProps) {
   return (
     <div
       role="dialog"
-      aria-label="Best Buy Floors AI Project Assistant"
+      aria-label="Alex, AI assistant for Best Buy Floors"
       className="fixed inset-0 z-50 flex flex-col bg-paper sm:inset-auto sm:bottom-32 sm:right-6 sm:h-[680px] sm:max-h-[80vh] sm:w-[420px] sm:rounded-sm sm:border sm:border-hairline sm:shadow-2xl"
     >
       <ChatHeader onClose={onClose} />

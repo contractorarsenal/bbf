@@ -73,6 +73,23 @@ function extractBareNumber(text: string): number | undefined {
   return parseInt(match[1].replace(/,/g, ""), 10)
 }
 
+const HEDGE_WORDS = /\b(maybe|about|around|approximately|roughly|probably|ish|guess|i think|give or take)\b/gi
+
+/**
+ * True when, after stripping filler/hedge words and punctuation, the ENTIRE
+ * message is just a number — e.g. "72", "72 maybe", "around 72", "probably 72".
+ * Deliberately independent of any "what did we just ask" state, since that
+ * state isn't guaranteed to survive a stateless request/response cycle (the
+ * server-side demo provider rebuilds context fresh per call). Being a
+ * whole-message match (not a substring search) keeps it from misfiring on
+ * unrelated sentences that merely contain a number.
+ */
+function isBareNumericAnswer(text: string): number | undefined {
+  const stripped = text.replace(HEDGE_WORDS, "").replace(/[.,!?]/g, "").trim()
+  if (!/^\d{1,6}$/.test(stripped)) return undefined
+  return parseInt(stripped, 10)
+}
+
 function extractMaterial(text: string): MaterialKey | undefined {
   for (const [pattern, key] of MATERIAL_PATTERNS) {
     if (pattern.test(text)) return key
@@ -91,6 +108,22 @@ interface ExtractedFacts {
   notes: string[]
 }
 
+/**
+ * True once the project's own fields (not context/pendingField, which may not
+ * survive a stateless request) say stairs is the field we'd actually be
+ * asking about next — mirrors nextQuestion()'s field-based gating so a bare
+ * number can be attributed to the right question without relying on
+ * conversation-context state that a stateless server round-trip can lose.
+ */
+function isStairsLikelyPending(project: FlooringProject): boolean {
+  if (project.stairs !== undefined) return false
+  if (!project.flooringType || !project.squareFeet) return false
+  if (!project.existingFlooring) return false
+  const hasRealExisting = project.existingFlooring !== "bare subfloor"
+  if (hasRealExisting && project.removalRequired === undefined) return false
+  return true
+}
+
 function extractFacts(text: string, project: FlooringProject, pendingField?: keyof FlooringProject): ExtractedFacts {
   const updates: Partial<FlooringProject> = {}
   const notes: string[] = []
@@ -106,15 +139,25 @@ function extractFacts(text: string, project: FlooringProject, pendingField?: key
     notes.push(`material:${material}`)
   }
 
-  const sqft = extractNumber(text) ?? (pendingField === "squareFeet" ? extractBareNumber(text) : undefined)
+  const sqft =
+    extractNumber(text) ??
+    (project.squareFeet === undefined ? isBareNumericAnswer(text) : undefined) ??
+    (pendingField === "squareFeet" ? extractBareNumber(text) : undefined)
   if (sqft && sqft > 0 && sqft < 50000) {
     updates.squareFeet = sqft
     notes.push("sqft")
   }
 
   const stairsMatch = text.match(/(\d{1,3})\s*stairs?\b/i)
+  const bareNoAnswer = /^(no|none|zero|n\/a|not applicable)\.?$/i.test(text.trim())
   if (stairsMatch) {
     updates.stairs = parseInt(stairsMatch[1], 10)
+    notes.push("stairs")
+  } else if (bareNoAnswer && isStairsLikelyPending(project)) {
+    updates.stairs = 0
+    notes.push("stairs")
+  } else if (isStairsLikelyPending(project) && isBareNumericAnswer(text) !== undefined && isBareNumericAnswer(text)! < 100) {
+    updates.stairs = isBareNumericAnswer(text)
     notes.push("stairs")
   } else if (pendingField === "stairs") {
     if (/\b(no|none|zero|n\/a|not applicable)\b/i.test(text)) {
@@ -195,7 +238,10 @@ function extractFacts(text: string, project: FlooringProject, pendingField?: key
       notes.push("existingFlooring")
     } else {
       const cleaned = text.trim()
-      if (cleaned.length > 0 && cleaned.length < 60) {
+      // A bare number/hedge phrase here is almost certainly a stray answer
+      // to a *different* question (e.g. square footage repeated), not a
+      // description of flooring material — never accept it as-is.
+      if (cleaned.length > 0 && cleaned.length < 60 && isBareNumericAnswer(cleaned) === undefined) {
         updates.existingFlooring = cleaned
         notes.push("existingFlooring")
       }
