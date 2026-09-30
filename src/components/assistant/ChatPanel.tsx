@@ -1,14 +1,11 @@
 import { useEffect, useRef, useState } from "react"
 import type { ChatAction, ChatMessage, ConversationContext, PhotoAttachment } from "../../types/chat"
-import {
-  createInitialContext,
-  handleAction,
-  handleLeadSubmit,
-  handlePhotosAdded,
-  handleUserMessage,
-  handleWelcome,
-} from "../../lib/conversation-engine"
+import type { FlooringProject } from "../../types/project"
+import { askAssistant } from "../../lib/ai-client"
+import type { AssistantReply, HistoryTurn } from "../../lib/ai-client"
+import { createInitialContext, handleUserMessage } from "../../lib/conversation-engine"
 import type { LeadFormData } from "../../lib/conversation-engine"
+import { mergeProjectState, saveDemoLead } from "../../lib/project-state"
 import { ChatHeader } from "./ChatHeader"
 import { MessageBubble } from "./MessageBubble"
 import { TypingIndicator } from "./TypingIndicator"
@@ -18,109 +15,136 @@ import { EXAMPLE_PROMPTS } from "../../data/demoConversations"
 type Stub = Omit<ChatMessage, "id" | "createdAt">
 
 function toMessage(stub: Stub): ChatMessage {
-  return {
-    ...stub,
-    id: crypto.randomUUID(),
-    createdAt: Date.now(),
-  }
+  return { ...stub, id: crypto.randomUUID(), createdAt: Date.now() }
 }
+
+const WELCOME_TEXT =
+  "Hi! I'm the Best Buy Floors Project Assistant. I can help you compare flooring, answer product questions, or put together an estimated project range. What are you working on?"
+
+const QUICK_ACTIONS: Array<{ id: string; label: string; prompt: string }> = [
+  { id: "quote", label: "Get a Flooring Quote", prompt: "I'd like to get a flooring quote." },
+  { id: "pick", label: "Help Me Pick Flooring", prompt: "I'm not sure what flooring I want — can you help me pick?" },
+  { id: "question", label: "Ask a Product Question", prompt: "I have a question about your flooring products." },
+  { id: "team", label: "Talk to the Team", prompt: "I'd like to talk to the team." },
+]
 
 interface ChatPanelProps {
   onClose: () => void
 }
 
 export function ChatPanel({ onClose }: ChatPanelProps) {
-  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [messages, setMessages] = useState<ChatMessage[]>(() => [
+    toMessage({ role: "assistant", text: WELCOME_TEXT, actions: QUICK_ACTIONS.map(({ id, label }) => ({ id, label })) }),
+  ])
   const [typing, setTyping] = useState(false)
-  const contextRef = useRef<ConversationContext>(createInitialContext())
+  const [placeholder] = useState(() => EXAMPLE_PROMPTS[Math.floor(Math.random() * EXAMPLE_PROMPTS.length)])
   const scrollRef = useRef<HTMLDivElement>(null)
-  const typingTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const placeholderRef = useRef(EXAMPLE_PROMPTS[Math.floor(Math.random() * EXAMPLE_PROMPTS.length)])
 
-  useEffect(() => {
-    if (messages.length === 0) {
-      const { messages: stubs, context } = handleWelcome(contextRef.current)
-      contextRef.current = context
-      setMessages(stubs.map(toMessage))
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  // Source of truth for the live conversation, sent on every turn.
+  const historyRef = useRef<HistoryTurn[]>([])
+  const projectStateRef = useRef<FlooringProject>({})
+  // Only ever touched if /api/assistant is unreachable (e.g. plain `vite dev`
+  // with no Worker running) — a dev convenience, never the primary path.
+  const localFallbackContextRef = useRef<ConversationContext | null>(null)
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" })
   }, [messages, typing])
 
-  useEffect(() => {
-    return () => {
-      if (typingTimeout.current) clearTimeout(typingTimeout.current)
+  function runLocalFallback(userText: string): AssistantReply {
+    if (!localFallbackContextRef.current) {
+      localFallbackContextRef.current = { ...createInitialContext(), project: projectStateRef.current }
+    } else {
+      localFallbackContextRef.current = { ...localFallbackContextRef.current, project: projectStateRef.current }
     }
-  }, [])
+    const { messages: stubs, context } = handleUserMessage(localFallbackContextRef.current, userText)
+    localFallbackContextRef.current = context
+    const replyText = stubs.map((m) => m.text).filter((t): t is string => Boolean(t)).join("\n\n")
+    return {
+      reply: replyText || "Could you tell me a bit more about the project?",
+      projectState: context.project,
+      quote: stubs.find((m) => m.quote)?.quote,
+    }
+  }
 
-  function queueAssistantReply(stubs: Stub[]) {
-    if (stubs.length === 0) return
+  async function sendToAssistant(userText: string): Promise<AssistantReply> {
+    try {
+      return await askAssistant(userText, historyRef.current, projectStateRef.current)
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn("[assistant] /api/assistant unreachable — using local demo engine (dev fallback only).", err)
+      return runLocalFallback(userText)
+    }
+  }
+
+  /** Sends `sendText` to the assistant, showing `displayText` as the user's bubble. */
+  async function handleUserTurn(displayText: string, sendText: string = displayText, thenShowLeadForm = false) {
+    setMessages((prev) => [...prev, toMessage({ role: "user", text: displayText })])
     setTyping(true)
-    typingTimeout.current = setTimeout(
-      () => {
-        setTyping(false)
-        setMessages((prev) => [...prev, ...stubs.map(toMessage)])
-      },
-      550 + Math.random() * 350,
-    )
+
+    const reply = await sendToAssistant(sendText)
+
+    projectStateRef.current = reply.projectState
+    historyRef.current = [...historyRef.current, { role: "user", text: sendText }, { role: "assistant", text: reply.reply }]
+
+    setTyping(false)
+    setMessages((prev) => [
+      ...prev,
+      toMessage({ role: "assistant", text: reply.reply, quote: reply.quote }),
+      ...(thenShowLeadForm ? [toMessage({ role: "assistant" as const, leadForm: true })] : []),
+    ])
   }
 
   function handleSend(text: string, photos: PhotoAttachment[]) {
-    const immediateUser: ChatMessage[] = []
-    let pendingAssistant: Stub[] = []
-    let context = contextRef.current
-
     if (photos.length > 0) {
-      const result = handlePhotosAdded(context, photos)
-      context = result.context
-      for (const stub of result.messages) {
-        if (stub.role === "user") immediateUser.push(toMessage(stub))
-        else pendingAssistant.push(stub)
-      }
+      const updated = mergeProjectState(projectStateRef.current, {
+        photos: [...(projectStateRef.current.photos ?? []), ...photos.map((p) => p.url)],
+      })
+      projectStateRef.current = updated
+      setMessages((prev) => [...prev, toMessage({ role: "user", photoNotice: photos })])
+      setTyping(true)
+      setTimeout(() => {
+        setTyping(false)
+        setMessages((prev) => [...prev, toMessage({ role: "assistant", text: "Thanks — I've added those photos to your project." })])
+        if (text) void handleUserTurn(text)
+      }, 500)
+      return
     }
-
-    if (text) {
-      immediateUser.push(toMessage({ role: "user", text }))
-      const result = handleUserMessage(context, text)
-      context = result.context
-      pendingAssistant = [...pendingAssistant, ...result.messages]
-    }
-
-    contextRef.current = context
-    if (immediateUser.length > 0) setMessages((prev) => [...prev, ...immediateUser])
-    queueAssistantReply(pendingAssistant)
+    if (text) void handleUserTurn(text)
   }
 
   function handleQuickAction(action: ChatAction) {
-    const userEcho = toMessage({ role: "user", text: action.label })
-    setMessages((prev) => [...prev, userEcho])
-    const result = handleAction(contextRef.current, action.id)
-    contextRef.current = result.context
-    queueAssistantReply(result.messages)
+    const match = QUICK_ACTIONS.find((a) => a.id === action.id)
+    void handleUserTurn(action.label, match?.prompt ?? action.label)
   }
 
   function handleReadyToMoveForward() {
-    handleQuickAction({ id: "action:ready-to-move-forward", label: "I'm Ready to Move Forward" })
+    void handleUserTurn("I'm Ready to Move Forward", "I'm ready to move forward with this estimate.", true)
   }
 
   function handleAdjustProject() {
-    handleQuickAction({ id: "action:adjust-project", label: "Adjust My Project" })
+    void handleUserTurn("Adjust My Project", "I'd like to adjust some details of the project.")
   }
 
   function handleLeadFormSubmit(data: LeadFormData) {
-    const result = handleLeadSubmit(contextRef.current, data)
-    contextRef.current = result.context
-    queueAssistantReply(result.messages)
+    const lead = {
+      ...data,
+      project: projectStateRef.current,
+      createdAt: new Date().toISOString(),
+    }
+    saveDemoLead(lead)
+    setTyping(true)
+    setTimeout(() => {
+      setTyping(false)
+      setMessages((prev) => [...prev, toMessage({ role: "assistant", leadSuccess: true })])
+    }, 400)
   }
 
   return (
     <div
       role="dialog"
       aria-label="Best Buy Floors AI Project Assistant"
-      className="fixed inset-0 z-50 flex flex-col bg-paper sm:inset-auto sm:bottom-24 sm:right-6 sm:h-[700px] sm:max-h-[85vh] sm:w-[420px] sm:rounded-sm sm:border sm:border-hairline sm:shadow-2xl"
+      className="fixed inset-0 z-50 flex flex-col bg-paper sm:inset-auto sm:bottom-32 sm:right-6 sm:h-[680px] sm:max-h-[80vh] sm:w-[420px] sm:rounded-sm sm:border sm:border-hairline sm:shadow-2xl"
     >
       <ChatHeader onClose={onClose} />
 
@@ -143,7 +167,7 @@ export function ChatPanel({ onClose }: ChatPanelProps) {
         )}
       </div>
 
-      <Composer onSend={handleSend} placeholder={`Try: "${placeholderRef.current}"`} disabled={typing} />
+      <Composer onSend={handleSend} placeholder={`Try: "${placeholder}"`} disabled={typing} />
     </div>
   )
 }

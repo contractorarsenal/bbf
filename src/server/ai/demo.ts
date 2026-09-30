@@ -2,10 +2,10 @@ import type { AIProvider, AssistantReply, AssistantRequest } from "./provider"
 import { createInitialContext, handleUserMessage } from "../../lib/conversation-engine"
 
 /**
- * Server-side mirror of the deterministic demo engine. Not called by the
- * current frontend (which runs conversation-engine.ts directly in-browser),
- * but keeps the Worker entry point functional if a future client calls it
- * over HTTP instead of running the engine locally.
+ * Server-side mirror of the deterministic demo engine. This is the fallback
+ * path — selected by getProvider() only when AI_PROVIDER isn't "anthropic"
+ * or no key is configured. The primary path is AnthropicProvider; see
+ * README for why the scripted engine is intentionally not the main experience.
  */
 export class DemoProvider implements AIProvider {
   async respond(request: AssistantRequest): Promise<AssistantReply> {

@@ -32,8 +32,8 @@ export function MessageBubble({
           <div
             className={
               isUser
-                ? "rounded-sm bg-ink px-3.5 py-2.5 text-sm text-paper"
-                : "rounded-sm border border-hairline bg-paper px-3.5 py-2.5 text-sm text-ink"
+                ? "rounded-lg rounded-br-sm bg-ink px-4 py-2.5 text-[15px] leading-relaxed text-paper"
+                : "rounded-lg rounded-bl-sm border border-hairline bg-paper px-4 py-2.5 text-[15px] leading-relaxed text-ink"
             }
           >
             {message.text}

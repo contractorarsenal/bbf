@@ -1,31 +1,69 @@
-import { Award, Home, LayoutGrid, Star, Users } from "lucide-react"
-
 const POINTS = [
-  { icon: Users, label: "Family Owned Since 1990" },
-  { icon: Home, label: "10,000+ Projects Completed" },
-  { icon: Star, label: "230+ 5-Star Reviews" },
-  { icon: LayoutGrid, label: "Two Luxury Showrooms" },
-  { icon: Award, label: "Flooring, Cabinets, Countertops & More" },
+  "Family Owned Since 1990",
+  "10,000+ Projects Completed",
+  "230+ 5-Star Reviews",
+  "Two Luxury Showrooms",
+  "Flooring, Cabinets, Countertops & More",
 ]
 
-export function WhyChooseUs() {
+interface WhyChooseUsProps {
+  onStartProject: () => void
+}
+
+export function WhyChooseUs({ onStartProject }: WhyChooseUsProps) {
   return (
     <section className="border-b border-hairline bg-paper">
-      <div className="mx-auto max-w-[1380px] px-6 py-16 lg:py-20">
-        <h2 className="max-w-2xl font-display text-3xl text-ink sm:text-4xl">
-          Why Homeowners Choose Best Buy Floors
-        </h2>
-        <ul className="mt-10 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-5">
-          {POINTS.map(({ icon: Icon, label }) => (
-            <li
-              key={label}
-              className="flex flex-col items-start gap-3 rounded-sm border border-hairline p-6"
+      <div className="mx-auto grid max-w-[1400px] items-center gap-12 px-6 py-16 lg:grid-cols-2 lg:gap-16 lg:px-10 lg:py-20">
+        <div className="overflow-hidden rounded-sm">
+          <img
+            src="/images/team.webp"
+            alt="Best Buy Floors team member greeting a customer in the showroom"
+            className="h-full w-full object-cover"
+          />
+        </div>
+
+        <div>
+          <h2 className="font-display text-3xl leading-tight text-ink sm:text-4xl lg:text-[42px]">
+            Why Homeowners Choose Best Buy Floors
+          </h2>
+          <p className="mt-5 text-base leading-relaxed text-ink/75">
+            Bellevue Design Center by Best Buy Floors is a family-owned flooring and remodeling
+            showroom trusted by homeowners across Bellevue, Redmond, and the greater Eastside.
+            From humble beginnings in Jalisco, Mexico, Miguel Sr. built his career through hard
+            work, resilience, and a commitment to quality installation.
+          </p>
+          <p className="mt-4 text-base leading-relaxed text-ink/75">
+            Starting a home project can feel overwhelming when there are too many products,
+            styles, and decisions to compare. Best Buy Floors brings everything together with
+            expert guidance, in-person showroom support, trusted recommendations, and a team
+            focused on helping you choose with confidence.
+          </p>
+
+          <ul className="mt-6 space-y-3">
+            {POINTS.map((point) => (
+              <li key={point} className="flex items-center gap-3 text-base text-ink">
+                <span className="h-2 w-2 shrink-0 rounded-full bg-gold" aria-hidden="true" />
+                {point}
+              </li>
+            ))}
+          </ul>
+
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+            <button
+              type="button"
+              onClick={onStartProject}
+              className="rounded-sm bg-gold px-6 py-3 text-sm font-semibold text-ink transition-colors hover:bg-gold-dark"
             >
-              <Icon size={22} className="text-gold-dark" aria-hidden="true" />
-              <span className="text-sm font-medium leading-snug text-ink">{label}</span>
-            </li>
-          ))}
-        </ul>
+              Talk To The Team
+            </button>
+            <a
+              href="#flooring"
+              className="rounded-sm border border-ink/20 px-6 py-3 text-center text-sm font-semibold text-ink transition-colors hover:border-gold hover:text-gold-dark"
+            >
+              Our Work
+            </a>
+          </div>
+        </div>
       </div>
     </section>
   )

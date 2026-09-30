@@ -12,7 +12,7 @@ const formatCurrency = (n: number) => `$${n.toLocaleString()}`
 
 export function QuoteCard({ quote, onReadyToMoveForward, onAdjustProject, disabled }: QuoteCardProps) {
   return (
-    <div className="mt-2 overflow-hidden rounded-sm border border-gold/50 bg-paper">
+    <div className="mt-2 overflow-hidden rounded-lg border border-gold/50 bg-paper shadow-sm">
       <div className="flex items-center justify-between border-b border-hairline bg-paper-warm px-4 py-2.5">
         <h3 className="font-display text-lg text-ink">Your Project Estimate</h3>
         {quote.demo && (

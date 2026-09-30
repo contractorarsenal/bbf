@@ -7,4 +7,7 @@ directory = "./dist"
 binding = "ASSETS"
 
 [vars]
+# "demo" = deterministic dev-only fallback engine. Set to "anthropic" (and run
+# `npx wrangler secret put ANTHROPIC_API_KEY` — never add the key here in
+# plaintext) to enable the real Claude-powered assistant.
 AI_PROVIDER = "demo"

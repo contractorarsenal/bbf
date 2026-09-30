@@ -30,6 +30,11 @@ body {
   outline-offset: 2px;
 }
 
+::selection {
+  background-color: var(--color-gold-light);
+  color: var(--color-ink);
+}
+
 ::-webkit-scrollbar {
   width: 10px;
 }
@@ -40,3 +45,16 @@ body {
   background: var(--color-hairline);
   border-radius: 999px;
 }
+
+/* Diagonal line texture used behind the hero storefront image, matching the
+   reference site's subtle gold "fingerprint" pattern. */
+.texture-diagonal {
+  background-image: repeating-linear-gradient(
+    -55deg,
+    rgba(209, 152, 20, 0.16) 0px,
+    rgba(209, 152, 20, 0.16) 1px,
+    transparent 1px,
+    transparent 14px
+  );
+}
+

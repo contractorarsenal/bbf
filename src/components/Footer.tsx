@@ -3,7 +3,7 @@ const CURRENT_YEAR = new Date().getFullYear()
 export function Footer() {
   return (
     <footer className="bg-ink text-paper">
-      <div className="mx-auto max-w-[1380px] px-6 py-12">
+      <div className="mx-auto max-w-[1400px] px-6 py-12 lg:px-10">
         <div className="grid grid-cols-1 gap-8 sm:grid-cols-3">
           <div>
             <p className="font-display text-xl">Bellevue Design Center</p>
