@@ -15,6 +15,11 @@ export interface AssistantEnv {
   AI_PROVIDER?: "demo" | "anthropic"
   ANTHROPIC_API_KEY?: string
   ANTHROPIC_MODEL?: string
+  /** Dev-only: when set, logs token/context diagnostics server-side. Never
+   * read from `process.env` inside provider code — Workers don't have that
+   * global; it's threaded through as an env binding instead. Never exposed
+   * to the client. */
+  TOKEN_QA?: string
 }
 
 export interface HistoryTurn {

@@ -21,8 +21,11 @@ export function ChatHeader({ onClose }: ChatHeaderProps) {
         </div>
         <div className="flex items-start gap-3">
           <span className="flex items-center gap-1.5 text-xs font-medium text-ink/60">
-            <span className="h-1.5 w-1.5 rounded-full bg-green-600" aria-hidden="true" />
-            Online
+            <span className="relative flex h-1.5 w-1.5" aria-hidden="true">
+              <span className="absolute inline-flex h-full w-full animate-status-pulse rounded-full bg-green-600" />
+              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-green-600" />
+            </span>
+            Active now
           </span>
           <button
             type="button"
@@ -34,7 +37,7 @@ export function ChatHeader({ onClose }: ChatHeaderProps) {
           </button>
         </div>
       </div>
-      <p className="mt-2 text-xs text-ink/50">AI assistant for Alex &amp; Best Buy Floors</p>
+      <p className="mt-2 text-xs text-ink/50">Virtual assistant for Alex &amp; Best Buy Floors</p>
     </div>
   )
 }

@@ -58,3 +58,18 @@ body {
   );
 }
 
+/* Subtle "active now" status pulse — slow and gentle, not a flashing alert. */
+@keyframes status-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+.animate-status-pulse {
+  animation: status-pulse 2.8s ease-in-out infinite;
+}
+

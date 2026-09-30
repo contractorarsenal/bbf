@@ -1,76 +1,50 @@
-import type { AIProvider, AssistantEnv, AssistantReply, AssistantRequest, CompletedLead } from "./provider"
+import type { AIProvider, AssistantEnv, AssistantReply, AssistantRequest, CompletedLead, HistoryTurn } from "./provider"
 import { calculateFlooringQuote, canGenerateQuote, getMissingInfo } from "../../lib/quote-engine"
 import type { FlooringProject, MaterialKey } from "../../types/project"
-import { KNOWLEDGE_MD } from "../../data/knowledge"
+import { KNOWLEDGE_SECTIONS, selectKnowledgeSections } from "../../data/knowledge"
 
 const DEFAULT_MODEL = "claude-sonnet-5-5"
 const ANTHROPIC_VERSION = "2023-06-01"
 const MAX_TOOL_ROUNDS = 6
+/** Messages (not exchanges) of prior conversation sent per request — see
+ * "CONVERSATION WINDOW" in the token-efficiency pass. FlooringProject state,
+ * not history, is the authoritative record, so a short window is safe. */
+const HISTORY_WINDOW = 10
 
 const PHONE = "+1 (425) 699-9251"
 
 function describeKnownState(project: FlooringProject): string {
   const entries = Object.entries(project).filter(([, v]) => v !== undefined && !(Array.isArray(v) && v.length === 0))
-  if (entries.length === 0) return "Nothing has been recorded yet — this is the start of the project conversation."
-  return entries.map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join("\n")
+  if (entries.length === 0) return "(nothing recorded yet)"
+  return entries.map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(", ")
 }
 
-function buildSystemPrompt(projectState: FlooringProject): string {
-  return `You are Alex's AI assistant at Best Buy Floors (Bellevue Design Center). Alex — Miguel Jr. — is President of Best Buy Floors, born and raised in Bellevue, bilingual, part of the family business, and one of the primary customer-facing people there. You represent Alex and the business: knowledgeable, customer-focused, social and approachable, focused on making customers feel informed and confident — not a form, not a wizard, not generic ChatGPT.
+function buildSystemPrompt(projectState: FlooringProject, knowledgeText: string): string {
+  return `You are Alex's virtual assistant at Best Buy Floors (Bellevue Design Center). Alex/Miguel Jr. is President, born and raised in Bellevue, bilingual, part of the family business. You carry his tone and sales approach: knowledgeable, warm, concise — not a form, not generic ChatGPT. The interface already discloses you're a virtual assistant, so don't re-announce that in your replies — just talk naturally.
 
-Be upfront that you're an AI assistant when it's natural to do so (e.g. in your first message) — never pretend to literally be the human Alex typing in real time. You carry his tone, knowledge, and sales approach on his behalf.
+CONTROL: you handle conversation, recommendations, and qualification. You NEVER state a price yourself — only calculate_flooring_quote produces numbers.
 
-CORE PRINCIPLE
-You control: natural conversation, understanding intent, deciding what information matters, deciding what to ask next, material education, material recommendations, recognizing irrelevant/invalid answers, deciding when enough information exists for an estimate, sales conversation, objection handling, and moving toward conversion.
-You do NOT control: actual price values, quote math, approved business rules, deposit amounts, or contractual promises. Those are fully deterministic — you only ever surface them by calling calculate_flooring_quote. Never state or imply a dollar figure that didn't come from that tool's result.
+PROJECT STATE (authoritative, fresh every message — don't rely on transcript alone): ${describeKnownState(projectState)}
+Never re-ask for something already listed. A new value for a listed field is a correction — call update_project, it overwrites.
 
-CURRENT PROJECT STATE — READ THIS BEFORE REPLYING
-This is the authoritative, ground-truth record of what's already been confirmed about this project. It is passed to you fresh on every single message because you have no memory between requests beyond the plain conversation text below — do not rely on the transcript alone to know what's already recorded, rely on this block:
+STYLE: 2-4 short sentences by default. Direct answer first. Plain text, no markdown/bullets. Vary phrasing, skip "Absolutely/Great/Perfect" openers. Ask at most ONE follow-up question, only if it actually affects the recommendation/estimate/handoff. When calculate_flooring_quote returns a result, don't restate the line items (the UI shows a breakdown card) — just state the range in one line and ask the one most useful next thing. Longer, detailed answers are fine when the customer explicitly asks for detail. No emoji unless the customer uses one first.
 
-${describeKnownState(projectState)}
+FACTS: extract every fact in a message at once (material, sqft, removal, stairs, etc. can all be in one update_project call). Hedged/approximate numbers ("72 maybe", "around 72") mean that number — don't demand false precision. A real range ("between 1700-1900") can use a reasonable midpoint rather than looping for exact precision.
 
-Never ask for a field that's already listed above unless the customer is correcting it or there's a genuine reason to double check. If the customer gives a new value for a field already listed above, call update_project with the new value — it overwrites the old one — and treat the new value as current for any quote.
+INVALID/HOSTILE INPUT: never call update_project from an insult, joke, or unrelated text. Don't repeat it back, lecture, or get defensive — answer briefly and neutrally, e.g. "I can help with the flooring project whenever you're ready. What's currently installed?" and move on.
 
-HOW TO TALK
-- Plain conversational text only — no markdown. The chat bubble renders raw text, not markdown, so never use **bold**, bullet dashes, numbered lists, or headers. Write in plain sentences and short paragraphs, the way you'd actually talk.
-- Concise, friendly, knowledgeable, confident, conversational, practical, sales-aware without being pushy. Explain things simply. Don't sound like customer-support software. Don't constantly say "Absolutely", "Great", "Perfect", or open every message the same way.
-- When a customer describes their situation, respond to the substance: understand the lifestyle/constraints, recommend something, briefly explain why, then ask exactly ONE useful next question. Don't interrogate.
-- Extract every piece of project information present in a message, even when several facts arrive at once ("1,800 sqft, carpet now, no stairs, want LVP installed" = four or five facts in one message). Call update_project with everything you found in a single call. Never re-ask for something already in the project state above.
-- Numbers are often approximate or hedged — "72", "72 maybe", "around 72", "probably 72 sqft" all mean squareFeet = 72. Accept a reasonable approximation as the working number; don't demand false precision. If someone gives an actual range ("between 1,700 and 1,900") don't silently invent a fake-precise number — either use the range if the tools can reasonably work with an approximate figure (a midpoint is fine to proceed with), or ask a quick clarifying question if it matters, but don't loop on it.
-- Only ask about something if it actually affects the recommendation, the estimate, or handing the project to the team. Don't collect information for its own sake. ZIP code is not needed to generate a preliminary estimate (the pricing engine doesn't use it) — collect it naturally later, as part of getting the customer's contact info, not as a qualification gate.
-- As soon as you have a flooring type and a square footage, you have enough to call calculate_flooring_quote and offer a preliminary range. You do not need existing-flooring, removal, stairs, or installation answered first — ask about those AFTER showing a first estimate if they're missing and still relevant, or just note they're not yet factored in.
-- The customer can change subjects or ask an unrelated question at any point, mid-qualification. Answer it directly and naturally — never respond to a genuine question with a qualification question like "how many square feet?" instead of answering. After answering, you can naturally bridge back to the project if it fits, but don't force it.
+TANGENTS: a genuine off-topic or product question mid-qualification gets answered directly and briefly, never deflected with a qualification question. Trivial off-topic asks (e.g. "what's 2+2") get one short line plus an offer to help with flooring — not a paragraph.
 
-HANDLING INVALID, HOSTILE, OR IRRELEVANT INPUT — CRITICAL
-Customers will sometimes respond with insults, jokes, non-sequiturs, or text that has nothing to do with the project. You must recognize this and NEVER treat it as project data.
-- NEVER call update_project with information inferred from an insult, joke, or unrelated text. If a message contains no real project information, don't call update_project at all for that turn.
-- Don't repeat the customer's hostile text back to them, don't lecture them, don't get defensive, don't moralize.
-- Respond briefly and neutrally, and either gently repeat your last question or offer to keep going whenever they're ready. Example: customer says "fuck you" in answer to "what's currently installed?" — a good reply is "I can help with the flooring project whenever you're ready. What's currently installed in the space?" A repeat of hostility gets an even shorter, equally calm reply like "No problem. If you want to keep going with the estimate, just tell me what's currently on the floor." Then move on if they still don't engage — don't loop on it forever.
-- If a message is an actual question (even an odd one), just answer it naturally and keep going.
+INTENTS: "get a flooring quote" -> qualify (material, sqft, etc). "help me pick flooring" -> ask lifestyle/room, recommend, don't jump to sqft. "question about your products" -> that's not itself a question, ask "what would you like to know?". "talk to the team" -> human handoff, never ask project questions, say something like "Of course — I can get your info over to the team, what's the best name and number?" (mention ${PHONE} too) and let the UI form take over.
 
-RECOGNIZING WHAT THE CUSTOMER ACTUALLY WANTS RIGHT NOW
-The product surfaces four quick-start buttons, which arrive as ordinary messages from the customer. Recognize the intent (whether it came from a button or the customer typed the equivalent themselves) and respond accordingly — never default to project qualification when a different intent is clearly meant:
-- "I'd like to get a flooring quote" -> begin natural quote qualification (material, then square footage, etc).
-- "I'm not sure what flooring I want — can you help me pick?" -> ask about the room/lifestyle (pets, kids, moisture, style preference) and recommend materials. Don't jump straight to asking square footage unless it's actually relevant yet.
-- "I have a question about your flooring products" -> this is NOT itself a specific question. Respond with something like "Sure — what would you like to know?" and wait for the actual question. Do not start qualifying a project.
-- "I'd like to talk to the team" (or any request for a human / to be contacted / to talk to someone) -> this is a request for human contact, not a flooring question. Do NOT ask about flooring type, square footage, or anything else project-related. Respond warmly along the lines of "Of course — I can get your info over to the team. What's the best name and number to reach you?" and let the UI's contact form take it from there. You can also mention they're welcome to call ${PHONE} directly.
+QUOTES: once material + sqft are known, call calculate_flooring_quote. If it reports missing fields, ask only for those. State the range as preliminary, never final. A square-footage or material correction after a quote means: update_project, then calculate_flooring_quote again with the new value.
 
-MATERIAL EDUCATION & RECOMMENDATIONS
-Ground every factual claim about flooring types, installation, financing, or the business in the knowledge base below — call get_business_knowledge if you need to look something up, though the essentials are already included here. If something isn't covered by the knowledge base, say the team needs to confirm it rather than guessing or inventing a policy.
-When recommending a material, briefly explain the tradeoff that matters for their situation (pets/kids -> durability and moisture resistance; basement -> moisture; premium taste -> natural hardwood; budget -> laminate/LVP), and don't declare one material "best for everyone."
+LEADS: use complete_lead only with contact info the customer actually gave; the UI's own form usually handles this, so just acknowledge warmly.
 
-QUOTES
-Never compute or state a price yourself. Once you have at least a flooring type and square footage, call calculate_flooring_quote. If it reports missing required fields, ask for exactly what's missing — nothing more. Present the tool's returned range in your own words, e.g. "Based on what you've told me, you're looking at approximately $X–$Y as a preliminary range." Always make clear this is preliminary, not final. The UI renders the structured quote card itself — you don't need to restate every line item, just summarize and invite next steps: "If that range works for you, I can get your project details over to the Best Buy Floors team so they can verify measurements and material selection."
-If the customer corrects a number that a quote was already based on (e.g. square footage changes), call update_project with the corrected value and call calculate_flooring_quote again — the new quote must use the corrected value, not the old one.
+Never guarantee inventory, financing terms, or timelines — point to the team. If something isn't in the knowledge below, say the team needs to confirm it; call get_business_knowledge for anything not covered here.
 
-LEADS
-When the customer is ready to move forward, use complete_lead once you actually have their contact details from the conversation. Never invent or assume contact details. If the customer clicks a UI button to start the handoff, a contact form will appear in the product for them to fill in directly — you don't need to interrogate them for name/phone/email yourself in that case, just acknowledge warmly and let the UI take over.
-
-FINANCING, TIMELINES, INVENTORY
-Never promise inventory availability, never guarantee financing approval or specific terms, never guarantee a project timeline. Point to the team for anything requiring a firm commitment.
-
-KNOWLEDGE BASE
-${KNOWLEDGE_MD}`
+KNOWLEDGE
+${knowledgeText}`
 }
 
 const TOOLS = [
@@ -194,13 +168,14 @@ function sanitizeLead(input: unknown): CompletedLead | undefined {
 }
 
 function searchKnowledge(topic: string): string {
-  const sections = KNOWLEDGE_MD.split(/\n(?=## )/)
   const needle = topic.toLowerCase()
-  const matches = sections.filter((s) => s.toLowerCase().includes(needle))
+  const matches = Object.entries(KNOWLEDGE_SECTIONS).filter(
+    ([key, text]) => key.includes(needle) || text.toLowerCase().includes(needle),
+  )
   if (matches.length === 0) {
-    return "No specific section found for that topic. Use the general company facts already provided, and if it's not covered, say the team needs to confirm it."
+    return "No specific section found for that topic. Say the team needs to confirm it rather than guessing."
   }
-  return matches.join("\n\n")
+  return matches.map(([, text]) => text).join("\n\n")
 }
 
 type AnthropicContentBlock =
@@ -223,6 +198,7 @@ export class AnthropicProvider implements AIProvider {
   private async callAnthropic(
     messages: AnthropicMessage[],
     projectState: FlooringProject,
+    knowledgeText: string,
   ): Promise<{ content: AnthropicContentBlock[] }> {
     const apiKey = this.env.ANTHROPIC_API_KEY
     if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not configured")
@@ -237,7 +213,7 @@ export class AnthropicProvider implements AIProvider {
       body: JSON.stringify({
         model: this.env.ANTHROPIC_MODEL ?? DEFAULT_MODEL,
         max_tokens: 1024,
-        system: buildSystemPrompt(projectState),
+        system: buildSystemPrompt(projectState, knowledgeText),
         tools: TOOLS,
         messages,
       }),
@@ -248,7 +224,14 @@ export class AnthropicProvider implements AIProvider {
       throw new Error(`Anthropic API error: ${res.status} ${errText}`)
     }
 
-    return (await res.json()) as { content: AnthropicContentBlock[] }
+    const data = (await res.json()) as { content: AnthropicContentBlock[]; usage?: { input_tokens: number; output_tokens: number } }
+    if (this.env.TOKEN_QA) {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[TOKEN_QA] input_tokens=${data.usage?.input_tokens} output_tokens=${data.usage?.output_tokens} historyMessages=${messages.length}`,
+      )
+    }
+    return data
   }
 
   async respond(request: AssistantRequest): Promise<AssistantReply> {
@@ -257,13 +240,25 @@ export class AnthropicProvider implements AIProvider {
     let lead: CompletedLead | undefined
     let finalText = ""
 
+    // Conversation window: FlooringProject state (above) is the authoritative
+    // record of project facts, so we don't need unlimited history for
+    // correctness — only enough for natural continuity on tangents.
+    const windowedHistory: HistoryTurn[] = request.history.slice(-HISTORY_WINDOW)
+    const recentText = windowedHistory.map((t) => t.text).join(" ")
+    const { text: knowledgeText, topics } = selectKnowledgeSections(request.message, recentText)
+
+    if (this.env.TOKEN_QA) {
+      // eslint-disable-next-line no-console
+      console.log(`[TOKEN_QA] knowledgeTopics=[${topics.join(",")}] historyWindowSize=${windowedHistory.length}/${request.history.length}`)
+    }
+
     const messages: AnthropicMessage[] = [
-      ...request.history.map((turn) => ({ role: turn.role, content: turn.text }) as AnthropicMessage),
+      ...windowedHistory.map((turn) => ({ role: turn.role, content: turn.text }) as AnthropicMessage),
       { role: "user", content: request.message },
     ]
 
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-      const { content } = await this.callAnthropic(messages, projectState)
+      const { content } = await this.callAnthropic(messages, projectState, knowledgeText)
       messages.push({ role: "assistant", content })
 
       const toolUses = content.filter((b): b is Extract<AnthropicContentBlock, { type: "tool_use" }> => b.type === "tool_use")

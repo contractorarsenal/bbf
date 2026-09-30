@@ -19,7 +19,7 @@ function toMessage(stub: Stub): ChatMessage {
 }
 
 const WELCOME_TEXT =
-  "Hey, I'm Alex's AI assistant here at Best Buy Floors. I can help you figure out what flooring makes sense for your space, answer questions, or put together a rough project estimate. What are you working on?"
+  "Hey, it's Alex. What are you working on? I can help with flooring questions, recommendations, or put together a rough estimate for your project."
 
 const QUICK_ACTIONS: Array<{ id: string; label: string; prompt: string }> = [
   { id: "quote", label: "Get a Flooring Quote", prompt: "I'd like to get a flooring quote." },
