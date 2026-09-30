@@ -1,0 +1,27 @@
+{
+  "meta": {
+    "demo": true,
+    "warning": "Placeholder demo pricing. Replace with Best Buy Floors approved pricing before production."
+  },
+  "materials": {
+    "lvp": { "low": 4.0, "high": 7.0, "unit": "sqft", "label": "Luxury Vinyl Plank" },
+    "carpet": { "low": 3.0, "high": 6.0, "unit": "sqft", "label": "Carpet" },
+    "engineeredHardwood": { "low": 7.0, "high": 12.0, "unit": "sqft", "label": "Engineered Hardwood" },
+    "solidHardwood": { "low": 9.0, "high": 15.0, "unit": "sqft", "label": "Solid Hardwood" },
+    "tile": { "low": 5.0, "high": 10.0, "unit": "sqft", "label": "Tile" },
+    "laminate": { "low": 2.5, "high": 5.0, "unit": "sqft", "label": "Laminate" }
+  },
+  "labor": {
+    "lvp": { "low": 2.5, "high": 4.0 },
+    "carpet": { "low": 1.5, "high": 3.0 },
+    "engineeredHardwood": { "low": 4.0, "high": 7.0 },
+    "solidHardwood": { "low": 5.0, "high": 8.0 },
+    "tile": { "low": 6.0, "high": 12.0 },
+    "laminate": { "low": 2.0, "high": 3.5 }
+  },
+  "removal": {
+    "carpet": { "low": 0.5, "high": 1.5 },
+    "hardSurface": { "low": 1.5, "high": 4.0 }
+  },
+  "stairs": { "low": 75, "high": 175, "unit": "each" }
+}
